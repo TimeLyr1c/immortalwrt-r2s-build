@@ -1,0 +1,73 @@
+name: Build ImmortalWrt R2S (23.05 & 24.10)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        branch: [openwrt-23.05, openwrt-24.10]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y build-essential git wget curl unzip \
+            libncurses5-dev libncursesw5-dev zlib1g-dev gawk \
+            flex gettext libssl-dev python3-distutils rsync
+
+      - name: Clone ImmortalWrt
+        run: |
+          git clone -b ${{ matrix.branch }} https://github.com/immortalwrt/immortalwrt.git
+          cd immortalwrt
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Add R2S boot patch
+        run: |
+          cd immortalwrt
+          mkdir -p target/linux/rockchip/patches-6.1
+          cat > target/linux/rockchip/patches-6.1/999-fix-r2s-sdmmc.patch << "EOF"
+--- a/arch/arm/dts/rk3328-nanopi-r2s.dts
++++ b/arch/arm/dts/rk3328-nanopi-r2s.dts
+@@ -55,6 +55,15 @@
+        };
+ };
+
++&sdmmc {
++       bus-width = <4>;
++       cap-sd-highspeed;
++       supports-sd;
++       pinctrl-names = "default";
++       pinctrl-0 = <&sdmmc0m1_gpio>;
++       vmmc-supply = <&vcc_io_sdio>;
++       status = "okay";
++};
+EOF
+
+      - name: Configure NanoPi R2S
+        run: |
+          cd immortalwrt
+          make defconfig
+          sed -i 's/CONFIG_TARGET_MULTI_PROFILE=y/# CONFIG_TARGET_MULTI_PROFILE is not set/' .config
+          echo "CONFIG_TARGET_rockchip=y" >> .config
+          echo "CONFIG_TARGET_rockchip_rk3328=y" >> .config
+          echo "CONFIG_TARGET_rockchip_rk3328_DEVICE_friendlyarm_nanopi-r2s=y" >> .config
+
+      - name: Build
+        run: |
+          cd immortalwrt
+          make -j$(nproc) || make -j1 V=s
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: immortalwrt-${{ matrix.branch }}-nanopi-r2s
+          path: immortalwrt/bin/targets/rockchip/armv8/*
