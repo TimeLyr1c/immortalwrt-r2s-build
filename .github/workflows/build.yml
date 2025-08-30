@@ -1,19 +1,16 @@
-name: Build ImmortalWrt R2S (23.05 & 24.10)
+name: Auto Build ImmortalWrt NanoPi R2S
 
 on:
-  workflow_dispatch:
-  push:
-    branches:
-      - main
+  schedule:
+    - cron: '0 4 * * *'   # 每天 04:00 UTC 检查一次更新
+  workflow_dispatch:       # 支持手动触发
 
 jobs:
-  build:
+  auto-build:
     runs-on: ubuntu-22.04
-    strategy:
-      matrix:
-        branch: [openwrt-23.05, openwrt-24.10]
+
     steps:
-      - name: Checkout
+      - name: Checkout workflow repo
         uses: actions/checkout@v4
 
       - name: Install dependencies
@@ -25,8 +22,10 @@ jobs:
 
       - name: Clone ImmortalWrt
         run: |
-          git clone -b ${{ matrix.branch }} https://github.com/immortalwrt/immortalwrt.git
+          git clone https://github.com/immortalwrt/immortalwrt.git immortalwrt
           cd immortalwrt
+          git fetch --all
+          git checkout openwrt-24.10   # 可以改成 23.05 或其他分支
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
@@ -61,13 +60,13 @@ EOF
           echo "CONFIG_TARGET_rockchip_rk3328=y" >> .config
           echo "CONFIG_TARGET_rockchip_rk3328_DEVICE_friendlyarm_nanopi-r2s=y" >> .config
 
-      - name: Build
+      - name: Build firmware
         run: |
           cd immortalwrt
           make -j$(nproc) || make -j1 V=s
 
-      - name: Upload artifact
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: immortalwrt-${{ matrix.branch }}-nanopi-r2s
+          name: immortalwrt-nanopi-r2s
           path: immortalwrt/bin/targets/rockchip/armv8/*
